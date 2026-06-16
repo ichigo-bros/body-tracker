@@ -1,17 +1,454 @@
 <!DOCTYPE html>
-  <html lang="ja">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <meta name="apple-mobile-web-app-capable" content="yes" />
-      <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-      <meta name="apple-mobile-web-app-title" content="Body Metrics" />
-      <link rel="manifest" href="/manifest.json" />
-      <title>Body Metrics</title>
-      <style>* { margin: 0; padding: 0; box-sizing: border-box; } body { background: #0F1117; }</style>
-    </head>
-    <body>
-      <div id="root"></div>
-      <script type="module" src="/src/main.jsx"></script>
-    </body>
-  </html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Body Metrics" />
+<title>Body Metrics</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
+<style>
+  :root {
+    --bg: #0F1117;
+    --surface: #181C27;
+    --card: #1E2333;
+    --border: #2A3050;
+    --accent: #4FFFB0;
+    --accent-dim: #1A4035;
+    --text: #E8EDF5;
+    --muted: #6B7594;
+    --danger: #FF4F6A;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  body { min-height: 100vh; padding-bottom: 40px; }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 16px 20px;
+    display: flex; align-items: center; gap: 10px;
+    position: sticky; top: 0; background: var(--bg); z-index: 10;
+  }
+  .pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 12px var(--accent); flex-shrink: 0; }
+  .brand { font-weight: 700; font-size: 15px; letter-spacing: 0.08em; }
+  .tabs { margin-left: auto; display: flex; gap: 6px; }
+  .tab {
+    background: none; color: var(--muted); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 13px; font-size: 12px; cursor: pointer;
+    font-family: inherit;
+  }
+  .tab.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+  .icon-btn {
+    background: none; color: var(--muted); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 11px; font-size: 12px; cursor: pointer; font-family: inherit;
+  }
+
+  main { max-width: 720px; margin: 0 auto; padding: 20px 14px;
+    display: flex; flex-direction: column; gap: 20px; }
+
+  /* Upload zone */
+  .drop {
+    border: 2px dashed var(--border); border-radius: 16px; padding: 22px 18px;
+    display: flex; align-items: center; gap: 16px; cursor: pointer;
+    background: var(--surface); transition: border-color .2s, background .2s;
+  }
+  .drop.busy { cursor: wait; }
+  .drop-icon {
+    width: 58px; height: 58px; border-radius: 12px; background: var(--accent-dim);
+    display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0;
+  }
+  .drop img { height: 70px; border-radius: 8px; object-fit: cover; }
+  .drop-body { flex: 1; min-width: 0; }
+  .drop-title { font-weight: 600; font-size: 15px; margin-bottom: 3px; }
+  .drop-sub { color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .progress { color: var(--accent); font-weight: 600; font-size: 14px; }
+
+  /* Edit form after OCR */
+  .review { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+  .review h3 { font-size: 13px; color: var(--accent); margin-bottom: 4px; }
+  .review .hint { font-size: 11px; color: var(--muted); margin-bottom: 14px; line-height: 1.5; }
+  .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; color: var(--muted); }
+  .field .inwrap { display: flex; align-items: center; background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; padding: 0 10px; }
+  .field input {
+    background: none; border: none; color: var(--text); font-size: 15px;
+    padding: 9px 0; width: 100%; font-family: inherit; font-variant-numeric: tabular-nums;
+  }
+  .field input:focus { outline: none; }
+  .field .unit { color: var(--muted); font-size: 12px; padding-left: 4px; }
+  .field input.guess { color: var(--accent); }
+  .dt-field { grid-column: 1 / -1; }
+  .actions { display: flex; gap: 10px; margin-top: 16px; }
+  .btn-primary {
+    background: var(--accent); color: #0F1117; border: none; border-radius: 9px;
+    padding: 11px 22px; font-weight: 700; font-size: 14px; cursor: pointer; font-family: inherit;
+  }
+  .btn-ghost {
+    background: none; color: var(--muted); border: 1px solid var(--border); border-radius: 9px;
+    padding: 11px 18px; font-size: 14px; cursor: pointer; font-family: inherit;
+  }
+
+  .section-label { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+
+  /* Stat cards */
+  .stats { display: flex; flex-wrap: wrap; gap: 9px; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 11px;
+    padding: 12px 15px; min-width: 96px; }
+  .stat .l { font-size: 10px; color: var(--muted); margin-bottom: 3px; }
+  .stat .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .v small { font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 2px; }
+  .stat .v.empty { color: var(--border); }
+
+  /* Charts */
+  .charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .chart { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 10px 8px; }
+  .chart .ct { font-size: 12px; color: var(--muted); padding-left: 6px; margin-bottom: 6px; }
+  .chart svg { display: block; width: 100%; height: 110px; overflow: visible; }
+
+  /* History table */
+  .htable { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; }
+  th, td { padding: 10px 12px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); }
+  th:first-child, td:first-child { text-align: left; }
+  tbody td { border-bottom: 1px solid var(--border); }
+  tbody tr:last-child td { border-bottom: none; }
+  td.empty { color: var(--border); }
+  .del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 15px; padding: 0 2px; }
+
+  .empty-state { text-align: center; color: var(--muted); padding: 38px 0; font-size: 13px; line-height: 1.6; }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: var(--card); border: 1px solid var(--accent); color: var(--text);
+    padding: 11px 20px; border-radius: 10px; font-size: 13px; opacity: 0;
+    transition: all .3s; z-index: 50; pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="pulse"></div>
+  <span class="brand">BODY METRICS</span>
+  <div class="tabs">
+    <button class="tab active" data-tab="dashboard">ダッシュボード</button>
+    <button class="tab" data-tab="history">記録一覧</button>
+    <button class="icon-btn" id="csvBtn" style="display:none">↓ CSV</button>
+  </div>
+</header>
+
+<main>
+  <div class="drop" id="drop">
+    <input type="file" id="file" accept="image/*" hidden />
+    <div class="drop-icon" id="dropIcon">📷</div>
+    <div class="drop-body" id="dropBody">
+      <div class="drop-title">写真をタップして選択</div>
+      <div class="drop-sub">体組成計の画面を撮影した写真から数値を読み取ります</div>
+    </div>
+  </div>
+
+  <div id="reviewWrap"></div>
+
+  <section id="dashboard">
+    <div id="latestWrap"></div>
+    <div id="chartsWrap"></div>
+  </section>
+
+  <section id="history" style="display:none"></section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const METRICS = [
+  { key: "weight",      label: "体重",     unit: "kg",   color: "#4FFFB0" },
+  { key: "bodyFat",     label: "体脂肪率", unit: "%",    color: "#FF6B9D" },
+  { key: "muscle",      label: "筋肉量",   unit: "kg",   color: "#4FC3FF" },
+  { key: "bmi",         label: "BMI",      unit: "",     color: "#FFB84F" },
+  { key: "basalMetab",  label: "基礎代謝", unit: "kcal", color: "#B84FFF" },
+  { key: "boneMass",    label: "骨量",     unit: "kg",   color: "#4FF0FF" },
+  { key: "visceralFat", label: "内臓脂肪", unit: "",     color: "#FF8C4F" },
+];
+const STORE_KEY = "bodyMetricsRecords";
+
+// ── State / storage ──────────────────────────────────────────────
+let records = load();
+let currentTab = "dashboard";
+
+function load() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }
+  catch { return []; }
+}
+function save() { localStorage.setItem(STORE_KEY, JSON.stringify(records)); }
+
+// ── OCR ──────────────────────────────────────────────────────────
+// Pulls a sensible set of numbers out of messy OCR text and maps them
+// to fields by plausible value ranges. It's a best guess — the user edits.
+function guessFromText(text) {
+  const nums = (text.match(/\d+\.?\d*/g) || [])
+    .map(Number)
+    .filter(n => !isNaN(n) && n > 0 && n < 3000);
+  const g = {};
+  const used = new Set();
+  const take = (pred) => {
+    for (let i = 0; i < nums.length; i++) {
+      if (used.has(i)) continue;
+      if (pred(nums[i])) { used.add(i); return nums[i]; }
+    }
+    return null;
+  };
+  // order matters: most distinctive ranges first
+  g.basalMetab  = take(n => n >= 800 && n <= 2500 && Number.isInteger(n));
+  g.bodyFat     = take(n => n >= 3 && n <= 60 && !Number.isInteger(n));
+  g.weight      = take(n => n >= 25 && n <= 200);
+  g.muscle      = take(n => n >= 15 && n <= 120);
+  g.bmi         = take(n => n >= 10 && n <= 45);
+  g.boneMass    = take(n => n >= 1 && n <= 6);
+  g.visceralFat = take(n => n >= 1 && n <= 30);
+  return g;
+}
+
+async function runOCR(file) {
+  const drop = document.getElementById("drop");
+  const icon = document.getElementById("dropIcon");
+  const body = document.getElementById("dropBody");
+  drop.classList.add("busy");
+
+  const url = URL.createObjectURL(file);
+  icon.outerHTML = `<img id="dropIcon" src="${url}" alt="preview" />`;
+  body.innerHTML = `<div class="progress" id="prog">読み取り中… 0%</div>
+    <div class="drop-sub">端末内で解析しています（数秒〜十数秒）</div>`;
+
+  try {
+    const { data } = await Tesseract.recognize(file, "eng", {
+      logger: m => {
+        if (m.status === "recognizing text") {
+          const p = Math.round(m.progress * 100);
+          const el = document.getElementById("prog");
+          if (el) el.textContent = `読み取り中… ${p}%`;
+        }
+      }
+    });
+    const guess = guessFromText(data.text);
+    showReview(guess, url);
+  } catch (e) {
+    showReview({}, url);
+    toast("読み取りに失敗。手で入力してください");
+  } finally {
+    drop.classList.remove("busy");
+    resetDrop();
+  }
+}
+
+function resetDrop() {
+  const icon = document.getElementById("dropIcon");
+  if (icon && icon.tagName === "IMG") {
+    icon.outerHTML = `<div class="drop-icon" id="dropIcon">📷</div>`;
+  }
+  document.getElementById("dropBody").innerHTML =
+    `<div class="drop-title">写真をタップして選択</div>
+     <div class="drop-sub">体組成計の画面を撮影した写真から数値を読み取ります</div>`;
+}
+
+// ── Review form ──────────────────────────────────────────────────
+function showReview(guess, previewUrl) {
+  const now = new Date();
+  const localDT = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+    .toISOString().slice(0, 16);
+
+  const fields = METRICS.map(m => {
+    const val = guess[m.key] != null ? guess[m.key] : "";
+    const cls = guess[m.key] != null ? "guess" : "";
+    return `<div class="field">
+      <label>${m.label}</label>
+      <div class="inwrap">
+        <input type="number" inputmode="decimal" step="any" data-key="${m.key}"
+               value="${val}" class="${cls}" placeholder="—" />
+        ${m.unit ? `<span class="unit">${m.unit}</span>` : ""}
+      </div>
+    </div>`;
+  }).join("");
+
+  document.getElementById("reviewWrap").innerHTML = `
+    <div class="review">
+      <h3>読み取り結果を確認</h3>
+      <div class="hint">緑色の数字は自動入力されたものです。間違っていたらタップして修正、空欄は手で入力してください。</div>
+      <div class="field-grid">
+        ${fields}
+        <div class="field dt-field">
+          <label>日時</label>
+          <div class="inwrap">
+            <input type="datetime-local" id="dtInput" value="${localDT}" />
+          </div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn-primary" id="saveBtn">保存する</button>
+        <button class="btn-ghost" id="cancelBtn">キャンセル</button>
+      </div>
+    </div>`;
+
+  document.getElementById("saveBtn").onclick = saveReview;
+  document.getElementById("cancelBtn").onclick = () => {
+    document.getElementById("reviewWrap").innerHTML = "";
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  };
+}
+
+function saveReview() {
+  const rec = { id: Date.now() };
+  document.querySelectorAll("#reviewWrap input[data-key]").forEach(inp => {
+    const v = inp.value.trim();
+    rec[inp.dataset.key] = v === "" ? null : Number(v);
+  });
+  const dt = document.getElementById("dtInput").value;
+  rec.timestamp = dt ? new Date(dt).toISOString() : new Date().toISOString();
+
+  const hasAny = METRICS.some(m => rec[m.key] != null);
+  if (!hasAny) { toast("最低1つは数値を入力してください"); return; }
+
+  records.push(rec);
+  records.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  save();
+  document.getElementById("reviewWrap").innerHTML = "";
+  render();
+  toast("保存しました");
+}
+
+// ── Render ───────────────────────────────────────────────────────
+function fmtDate(iso) { const d = new Date(iso); return `${d.getMonth()+1}/${d.getDate()}`; }
+function fmtDateTime(iso) {
+  const d = new Date(iso);
+  return d.toLocaleString("ja-JP", { month:"numeric", day:"numeric", hour:"2-digit", minute:"2-digit" });
+}
+
+function render() {
+  document.getElementById("csvBtn").style.display = records.length ? "" : "none";
+  renderDashboard();
+  renderHistory();
+}
+
+function renderDashboard() {
+  const latest = records[records.length - 1];
+  const lw = document.getElementById("latestWrap");
+  if (!latest) {
+    lw.innerHTML = `<div class="empty-state">写真を読み込むか手で入力すると、<br>ここに最新の数値が表示されます</div>`;
+  } else {
+    lw.innerHTML = `<div class="section-label">最新の記録</div>
+      <div class="stats">${METRICS.map(m => {
+        const v = latest[m.key];
+        return `<div class="stat">
+          <div class="l">${m.label}</div>
+          <div class="v ${v==null?"empty":""}" ${v!=null?`style="color:${m.color}"`:""}>
+            ${v != null ? v : "—"}${v != null && m.unit ? `<small>${m.unit}</small>` : ""}
+          </div></div>`;
+      }).join("")}</div>`;
+  }
+
+  const cw = document.getElementById("chartsWrap");
+  if (records.length > 1) {
+    cw.innerHTML = `<div class="section-label" style="margin-top:20px">推移グラフ</div>
+      <div class="charts">${METRICS.map(m => sparkline(m)).filter(Boolean).join("")}</div>`;
+  } else {
+    cw.innerHTML = "";
+  }
+}
+
+function sparkline(m) {
+  const pts = records.filter(r => r[m.key] != null).map(r => ({ t: r.timestamp, v: r[m.key] }));
+  if (pts.length < 2) return "";
+  const W = 240, H = 90, pad = 8;
+  const vals = pts.map(p => p.v);
+  let min = Math.min(...vals), max = Math.max(...vals);
+  if (min === max) { min -= 1; max += 1; }
+  const x = i => pad + (i / (pts.length - 1)) * (W - pad * 2);
+  const y = v => H - pad - ((v - min) / (max - min)) * (H - pad * 2);
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  const dots = pts.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="2.5" fill="${m.color}"/>`).join("");
+  const last = pts[pts.length - 1].v;
+  return `<div class="chart">
+    <div class="ct">${m.label}${m.unit ? ` (${m.unit})` : ""} · <span style="color:${m.color}">${last}</span></div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <path d="${d}" fill="none" stroke="${m.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      ${dots}
+    </svg></div>`;
+}
+
+function renderHistory() {
+  const h = document.getElementById("history");
+  if (!records.length) {
+    h.innerHTML = `<div class="empty-state">まだ記録がありません</div>`;
+    return;
+  }
+  const head = `<tr><th>日時</th>${METRICS.map(m => `<th>${m.label}</th>`).join("")}<th></th></tr>`;
+  const rows = [...records].reverse().map(r => `<tr>
+    <td>${fmtDateTime(r.timestamp)}</td>
+    ${METRICS.map(m => r[m.key] != null
+      ? `<td>${r[m.key]}${m.unit}</td>`
+      : `<td class="empty">—</td>`).join("")}
+    <td><button class="del" data-id="${r.id}">✕</button></td>
+  </tr>`).join("");
+  h.innerHTML = `<div class="htable"><table><thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+  h.querySelectorAll(".del").forEach(b => {
+    b.onclick = () => {
+      records = records.filter(r => r.id !== Number(b.dataset.id));
+      save(); render(); toast("削除しました");
+    };
+  });
+}
+
+// ── CSV ──────────────────────────────────────────────────────────
+function downloadCSV() {
+  const headers = ["日時", ...METRICS.map(m => `${m.label}(${m.unit})`)];
+  const rows = records.map(r =>
+    [r.timestamp, ...METRICS.map(m => r[m.key] ?? "")].join(","));
+  const csv = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "body-metrics.csv"; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Toast ────────────────────────────────────────────────────────
+let toastTimer;
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+// ── Wire up ──────────────────────────────────────────────────────
+document.getElementById("drop").onclick = () => {
+  if (!document.getElementById("drop").classList.contains("busy"))
+    document.getElementById("file").click();
+};
+document.getElementById("file").onchange = e => {
+  const f = e.target.files[0];
+  if (f) runOCR(f);
+  e.target.value = "";
+};
+document.querySelectorAll(".tab").forEach(t => {
+  t.onclick = () => {
+    currentTab = t.dataset.tab;
+    document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x === t));
+    document.getElementById("dashboard").style.display = currentTab === "dashboard" ? "" : "none";
+    document.getElementById("history").style.display = currentTab === "history" ? "" : "none";
+  };
+});
+document.getElementById("csvBtn").onclick = downloadCSV;
+
+render();
+</script>
+</body>
+</html>
